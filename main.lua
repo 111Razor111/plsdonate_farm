@@ -277,65 +277,65 @@ local function createScript()
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end
 
-    -- === РЕЖИМ 1: Попрошайничество ===
-    local function startBegMode()
-        debugPrint("🚀 Starting Beg Mode")
-        currentMode = "Beg"
-        isRunning = true
+-- === РЕЖИМ 1: Попрошайничество (ИСПРАВЛЕНО) ===
+local function startBegMode()
+    debugPrint("🚀 Starting Beg Mode")
+    currentMode = "Beg"
+    isRunning = true
 
-        -- 1. Занять стенд
+    -- 1. Занять стенд
+    if not claimStand() then
+        debugWarn("Failed to claim stand, retrying...")
+        wait(5)
         if not claimStand() then
-            debugWarn("Failed to claim stand, retrying...")
-            wait(5)
-            if not claimStand() then
-                debugWarn("No stand found, rejoining...")
-                rejoinServer()
-                return
+            debugWarn("No stand found, rejoining...")
+            rejoinServer()
+            return
+        end
+    end
+    updateStandText("Beg")
+
+    -- 2. Основной цикл обхода игроков
+    while isRunning do
+        -- Собираем список игроков
+        local playerList = {}
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(playerList, player)
             end
         end
-        updateStandText("Beg")  -- Обновляем текст на стенде
 
-        -- 2. Основной цикл обхода игроков
-        while isRunning do
-            -- Собираем список игроков
-            local playerList = {}
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                    table.insert(playerList, player)
-                end
-            end
+        debugPrint("Found", #playerList, "players to beg")
 
-            debugPrint("Found", #playerList, "players to beg")
-
-            if #playerList == 0 then
-                debugPrint("No players, rejoining...")
-                rejoinServer()
-                break
-            end
-
-            -- Обходим каждого
-            for _, player in ipairs(playerList) do
-                if not isRunning then break end
-
-                -- Шаг 1: Телепорт к игроку
-                if teleportToPlayer(player) then
-                    wait(1)
-                    -- Шаг 2: Отправить сообщение
-                    sendChatMessage(config.begMessage)
-                    wait(config.delayBetweenPlayers)
-                    -- Шаг 3: Вернуться к стенду
-                    teleportToStand()
-                    wait(1)  -- Небольшая пауза перед следующим
-                end
-                antiAfk()  -- Анти-AFK между игроками
-            end
-
-            -- После обхода всех перезаходим
-            debugPrint("All players visited, rejoining...")
+        if #playerList == 0 then
+            debugPrint("No players, rejoining...")
             rejoinServer()
             break
         end
+
+        -- Обходим каждого
+        for _, player in ipairs(playerList) do
+            if not isRunning then break end
+
+            -- Шаг 1: Телепорт к игроку
+            if teleportToPlayer(player) then
+                wait(1)
+                -- Шаг 2: Отправить сообщение
+                sendChatMessage(config.begMessage)
+                wait(config.delayBetweenPlayers)
+                -- Шаг 3: Вернуться к стенду
+                teleportToStand()
+                wait(1)
+            end
+            antiAfk()  -- Анти-AFK после каждого игрока
+        end
+
+        -- После обхода всех перезаходим
+        debugPrint("All players visited, rejoining...")
+        rejoinServer()
+        break
     end
+end
 
     -- === РЕЖИМ 2: Jump-Robux ===
     local function startJumpMode()
@@ -783,3 +783,4 @@ local success, err = pcall(createScript)
 if not success then
     warn("[PlsDonateFarm] ❌ FATAL ERROR:", err)
 end
+
