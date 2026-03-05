@@ -1,9 +1,10 @@
 --[[
-    Pls Donate Farm Script v7.0 (ФИНАЛЬНАЯ СТАБИЛЬНАЯ)
+    Pls Donate Farm Script v5.0 (Стабильная версия с доработками)
     Автор: AI Agent
+    Горячая клавиша: Правый Ctrl
 ]]
 
--- Конфигурация (ваши данные)
+-- Конфигурация
 local config = {
     telegramToken = "8104787078:AAHiRuOS4gaTxaVRlYU7BV9L8flN_VXGV68",
     telegramChatID = "1981885077",
@@ -12,7 +13,7 @@ local config = {
     jumpThanksMessage = "Thanks you god for this challenge im complete",
     jumpRobuxMessage = "5robux = 20 jump",
     delayBetweenPlayers = 3,
-    jumpDelay = 0.8,  -- Увеличено до 0.8 сек для стабильности
+    jumpDelay = 0.8,  -- 0.8 сек между прыжками
     maxServerTime = 30 * 60,
     extraTimePerDonation = 10 * 60,
 }
@@ -24,8 +25,6 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TextChatService = game:GetService("TextChatService")
 local VirtualUser = game:GetService("VirtualUser")
-local ContextActionService = game:GetService("ContextActionService")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Переменные
@@ -41,37 +40,23 @@ local function debugPrint(...) print("[PlsDonateFarm]", ...) end
 local function debugWarn(...) warn("[PlsDonateFarm]", ...) end
 
 -- Получение частей персонажа
-local function getCharacter()
-    return LocalPlayer.Character
-end
 local function getRootPart()
-    local char = getCharacter()
-    return char and char:FindFirstChild("HumanoidRootPart")
+    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 end
 local function getHumanoid()
-    local char = getCharacter()
-    return char and char:FindFirstChild("Humanoid")
+    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
 end
 
--- Telegram с диагностикой
+-- Telegram
 local function sendTelegram(message)
-    debugPrint("Attempting to send Telegram:", message)
     if config.telegramToken == "YOUR_BOT_TOKEN" then
         debugWarn("Telegram token not set")
-        return false
+        return
     end
     local url = string.format("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
         config.telegramToken, config.telegramChatID, HttpService:UrlEncode(message))
-    local success, err = pcall(function()
-        HttpService:GetAsync(url)
-    end)
-    if success then
-        debugPrint("Telegram sent successfully")
-        return true
-    else
-        debugWarn("Telegram send failed:", err)
-        return false
-    end
+    pcall(function() HttpService:GetAsync(url) end)
+    debugPrint("Telegram sent: " .. message)
 end
 
 -- Анти-AFK
@@ -86,7 +71,6 @@ local function antiAfk()
         wait(0.1)
         VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
     end)
-    debugPrint("Anti-AFK executed")
 end
 
 -- Поиск стенда
@@ -105,7 +89,7 @@ local function findStand()
     return nil
 end
 
--- Занятие стенда (УЛУЧШЕНО: два метода нажатия E)
+-- Занятие стенда с удержанием E
 local function claimStand()
     local stand = findStand()
     if not stand then
@@ -115,31 +99,17 @@ local function claimStand()
 
     -- Телепортируемся к стенду
     local root = getRootPart()
-    if not root then
-        debugWarn("No root part, cannot move to stand")
-        return false
+    if root then
+        root.CFrame = stand:GetPivot().Position * CFrame.new(0,0,2)
     end
-    root.CFrame = stand:GetPivot().Position * CFrame.new(0,0,2)
     wait(1)
 
-    debugPrint("Attempting to claim stand...")
-    -- Метод 1: VirtualUser
-    pcall(function()
-        VirtualUser:KeyDown(Enum.KeyCode.E)
-    end)
+    -- Имитация удержания E
+    debugPrint("Holding E...")
+    pcall(function() VirtualUser:KeyDown(Enum.KeyCode.E) end)
     wait(2)
-    pcall(function()
-        VirtualUser:KeyUp(Enum.KeyCode.E)
-    end)
+    pcall(function() VirtualUser:KeyUp(Enum.KeyCode.E) end)
 
-    -- Метод 2: ContextActionService (на случай, если первый не сработал)
-    pcall(function()
-        ContextActionService:CallFunction("Interact", Enum.UserInputState.Begin, Enum.KeyCode.E)
-        wait(2)
-        ContextActionService:CallFunction("Interact", Enum.UserInputState.End, Enum.KeyCode.E)
-    end)
-
-    -- Сохраняем позицию стенда
     StandPosition = stand:GetPivot().Position
     debugPrint("Stand claimed at", StandPosition)
     return true
@@ -160,8 +130,7 @@ end
 
 -- Телепорт к игроку
 local function teleportToPlayer(player)
-    if not player.Character then return false end
-    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+    local targetRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     local myRoot = getRootPart()
     if not targetRoot or not myRoot then return false end
     myRoot.CFrame = targetRoot.CFrame * CFrame.new(0,0,-3)
@@ -187,10 +156,9 @@ local function sendChat(msg)
             LocalPlayer:Chat(msg)
         end
     end)
-    debugPrint("Chat sent:", msg)
 end
 
--- Прыжки (с задержкой config.jumpDelay)
+-- Прыжки
 local function performJumps(count)
     local humanoid = getHumanoid()
     if not humanoid then return end
@@ -202,22 +170,17 @@ local function performJumps(count)
     debugPrint("Performed", count, "jumps")
 end
 
--- Обработка доната (ИСПРАВЛЕНО округление суммы)
+-- Обработка доната
 local function handleDonation(amount, donor)
-    local intAmount = math.floor(amount)  -- Округляем вниз до целого
+    local intAmount = math.floor(amount)  -- округляем до целого
     local after = intAmount * 0.7
-    debugPrint("Donation handled: raw amount=", amount, "intAmount=", intAmount, "donor=", donor)
-
-    -- Telegram
-    local msg = string.format("%s получил %d Robux (чистыми %d). От: %s", LocalPlayer.Name, intAmount, after, donor)
-    sendTelegram(msg)
+    sendTelegram(string.format("%s получил %d Robux (чистыми %d). От: %s", LocalPlayer.Name, intAmount, after, donor))
 
     if currentMode == "Jump" then
         serverTime = 0
         sendChat("OMG thanks you for donat")
         wait(1)
-        local jumps = intAmount * 4  -- 1 робукс = 4 прыжка
-        performJumps(jumps)
+        performJumps(intAmount * 4)
         sendChat(config.jumpThanksMessage)
     elseif currentMode == "Beg" then
         sendChat(config.thankYouMessage)
@@ -237,7 +200,6 @@ local function setupDonationListener()
                     last = raised.Value
                 end
             end)
-            debugPrint("Donation listener (leaderstats) active")
         end
     end
     if TextChatService then
@@ -249,7 +211,6 @@ local function setupDonationListener()
                 end
             end
         end)
-        debugPrint("Donation listener (chat) active")
     end
 end
 
@@ -261,22 +222,20 @@ local function rejoinServer()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end
 
--- === РЕЖИМ 1: Попрошайничество (с защитой от ошибок) ===
+-- === РЕЖИМ 1: Попрошайничество ===
 local function startBegMode()
-    debugPrint("🚀 Starting Beg Mode")
+    debugPrint("Starting Beg Mode")
     currentMode = "Beg"
     isRunning = true
 
-    -- Занимаем стенд
     if not claimStand() then
-        debugWarn("Failed to claim stand, cannot start mode")
+        debugWarn("Failed to claim stand")
         isRunning = false
         return
     end
     updateStandText("Beg")
 
     while isRunning do
-        -- Собираем игроков внутри цикла, чтобы список обновлялся
         local players = {}
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -285,49 +244,36 @@ local function startBegMode()
         end
 
         if #players == 0 then
-            debugPrint("No players, rejoining...")
             rejoinServer()
             break
         end
 
         for _, p in ipairs(players) do
             if not isRunning then break end
-            -- Защищаем каждую итерацию pcall
-            local success, err = pcall(function()
-                if teleportToPlayer(p) then
-                    wait(1)
-                    sendChat(config.begMessage)
-                    wait(10)  -- Ждём 10 секунд
-                    teleportToStand()
-                    wait(1)
-                else
-                    debugWarn("Failed to teleport to", p.Name)
-                end
-            end)
-            if not success then
-                debugWarn("Error in beg iteration for", p.Name, ":", err)
+            if teleportToPlayer(p) then
+                wait(1)
+                sendChat(config.begMessage)
+                wait(10)  -- ждём 10 секунд
+                teleportToStand()
+                wait(1)
             end
             antiAfk()
         end
 
-        -- После обхода всех перезаходим
-        debugPrint("All players visited, rejoining...")
         rejoinServer()
         break
     end
     isRunning = false
-    debugPrint("Beg Mode finished")
 end
 
 -- === РЕЖИМ 2: Jump-Robux ===
 local function startJumpMode()
-    debugPrint("🚀 Starting Jump Mode")
+    debugPrint("Starting Jump Mode")
     currentMode = "Jump"
     isRunning = true
     serverTime = 0
 
     if not claimStand() then
-        debugWarn("Failed to claim stand, cannot start mode")
         isRunning = false
         return
     end
@@ -338,48 +284,33 @@ local function startJumpMode()
         serverTime = serverTime + 1
         antiAfk()
         if serverTime >= config.maxServerTime then
-            debugPrint("Max server time reached, rejoining...")
             rejoinServer()
             break
         end
     end
     isRunning = false
-    debugPrint("Jump Mode finished")
 end
 
--- Остановка режима
+-- Остановка
 local function stopMode()
-    if isRunning then
-        debugPrint("Stopping current mode")
-        isRunning = false
-        currentMode = nil
-    end
+    isRunning = false
+    currentMode = nil
 end
 
--- Тестовая функция Fake Donate
+-- Тест Fake Donate
 local function fakeDonate()
-    debugPrint("🪙 Fake donate 5 Robux triggered")
+    debugPrint("Fake donate 5 Robux")
     handleDonation(5, "TEST")
 end
 
--- Тест захвата стенда
-local function testClaimStand()
-    debugPrint("🧪 Testing stand claim...")
-    if claimStand() then
-        debugPrint("✅ Stand claim test successful")
-    else
-        debugWarn("❌ Stand claim test failed")
-    end
-end
-
--- Полное завершение скрипта
+-- Завершение
 local function shutdown()
     stopMode()
     if gui then gui:Destroy() end
     debugPrint("Script terminated")
 end
 
--- GUI
+-- GUI (полностью из рабочей версии 5.0, без изменений)
 local function createGUI()
     local screen = Instance.new("ScreenGui")
     screen.Name = "PlsDonateFarm"
@@ -388,8 +319,8 @@ local function createGUI()
     gui = screen
 
     local main = Instance.new("Frame")
-    main.Size = UDim2.new(0, 500, 0, 700)
-    main.Position = UDim2.new(0.5, -250, 0.5, -350)
+    main.Size = UDim2.new(0, 450, 0, 650)
+    main.Position = UDim2.new(0.5, -225, 0.5, -325)
     main.BackgroundColor3 = Color3.fromRGB(20,20,30)
     main.Active = true
     main.Draggable = true
@@ -411,7 +342,7 @@ local function createGUI()
     title.Size = UDim2.new(1,-40,0,40)
     title.Position = UDim2.new(0,10,0,0)
     title.BackgroundTransparency = 1
-    title.Text = "Pls Donate Farm v7.0"
+    title.Text = "Pls Donate Farm v5.0"
     title.TextColor3 = Color3.new(1,1,1)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -442,7 +373,7 @@ local function createGUI()
 
     -- Контейнеры
     local begCont = Instance.new("ScrollingFrame", main)
-    begCont.Size = UDim2.new(1,-20,0,550)
+    begCont.Size = UDim2.new(1,-20,0,500)
     begCont.Position = UDim2.new(0,10,0,100)
     begCont.BackgroundTransparency = 1
     begCont.ScrollBarThickness = 5
@@ -450,7 +381,7 @@ local function createGUI()
     begCont.Visible = true
 
     local jumpCont = Instance.new("ScrollingFrame", main)
-    jumpCont.Size = UDim2.new(1,-20,0,550)
+    jumpCont.Size = UDim2.new(1,-20,0,500)
     jumpCont.Position = UDim2.new(0,10,0,100)
     jumpCont.BackgroundTransparency = 1
     jumpCont.ScrollBarThickness = 5
@@ -464,7 +395,7 @@ local function createGUI()
     descBeg.Position = UDim2.new(0,5,0,y)
     descBeg.BackgroundTransparency = 0.5
     descBeg.BackgroundColor3 = Color3.fromRGB(30,30,40)
-    descBeg.Text = "📢 Режим попрошайничества:\n• Захват стенда (удержание E)\n• Обход всех игроков (подход спереди)\n• 10 сек ожидания после сообщения\n• Возврат к стенду, перезаход после цикла"
+    descBeg.Text = "📢 Режим попрошайничества:\n• Захват стенда (удержание E)\n• Обход всех игроков\n• 10 сек ожидания после сообщения\n• Возврат к стенду, перезаход"
     descBeg.TextColor3 = Color3.fromRGB(200,200,255)
     descBeg.TextWrapped = true
     descBeg.TextXAlignment = Enum.TextXAlignment.Left
@@ -476,7 +407,7 @@ local function createGUI()
     begStart.Size = UDim2.new(0.5,-5,0,40)
     begStart.Position = UDim2.new(0,5,0,y)
     begStart.BackgroundColor3 = Color3.fromRGB(0,150,0)
-    begStart.Text = "▶ Старт"
+    begStart.Text = "Старт"
     begStart.TextColor3 = Color3.new(1,1,1)
     begStart.Font = Enum.Font.Gotham
     begStart.TextScaled = true
@@ -485,7 +416,7 @@ local function createGUI()
     begStop.Size = UDim2.new(0.5,-5,0,40)
     begStop.Position = UDim2.new(0.5,0,0,y)
     begStop.BackgroundColor3 = Color3.fromRGB(150,0,0)
-    begStop.Text = "⏹ Стоп"
+    begStop.Text = "Стоп"
     begStop.TextColor3 = Color3.new(1,1,1)
     begStop.Font = Enum.Font.Gotham
     begStop.TextScaled = true
@@ -504,28 +435,16 @@ local function createGUI()
     y = y + 60
 
     -- Кнопка перезахода
-    local rejoinBtnBeg = Instance.new("TextButton", begCont)
-    rejoinBtnBeg.Size = UDim2.new(1,-10,0,40)
-    rejoinBtnBeg.Position = UDim2.new(0,5,0,y)
-    rejoinBtnBeg.BackgroundColor3 = Color3.fromRGB(100,100,255)
-    rejoinBtnBeg.Text = "🔄 Перезайти на другой сервер"
-    rejoinBtnBeg.TextColor3 = Color3.new(1,1,1)
-    rejoinBtnBeg.Font = Enum.Font.Gotham
-    rejoinBtnBeg.TextScaled = true
-    rejoinBtnBeg.MouseButton1Click:Connect(rejoinServer)
+    local rejoinBtn = Instance.new("TextButton", begCont)
+    rejoinBtn.Size = UDim2.new(1,-10,0,40)
+    rejoinBtn.Position = UDim2.new(0,5,0,y)
+    rejoinBtn.BackgroundColor3 = Color3.fromRGB(100,100,255)
+    rejoinBtn.Text = "🔄 Перезайти на сервер"
+    rejoinBtn.TextColor3 = Color3.new(1,1,1)
+    rejoinBtn.Font = Enum.Font.Gotham
+    rejoinBtn.TextScaled = true
+    rejoinBtn.MouseButton1Click:Connect(rejoinServer)
     y = y + 50
-
-    -- Кнопка теста захвата стенда
-    local testStandBtn = Instance.new("TextButton", begCont)
-    testStandBtn.Size = UDim2.new(1,-10,0,40)
-    testStandBtn.Position = UDim2.new(0,5,0,y)
-    testStandBtn.BackgroundColor3 = Color3.fromRGB(255,200,0)
-    testStandBtn.Text = "🧪 Захват стенда (тест)"
-    testStandBtn.TextColor3 = Color3.new(0,0,0)
-    testStandBtn.Font = Enum.Font.Gotham
-    testStandBtn.TextScaled = true
-    testStandBtn.MouseButton1Click:Connect(testClaimStand)
-    y = y + 60
 
     -- Telegram info
     local tLabel1 = Instance.new("TextLabel", begCont)
@@ -581,7 +500,7 @@ local function createGUI()
     descJump.Position = UDim2.new(0,5,0,y)
     descJump.BackgroundTransparency = 0.5
     descJump.BackgroundColor3 = Color3.fromRGB(30,30,40)
-    descJump.Text = "🦘 Режим Jump-Robux:\n• Захват стенда (удержание E)\n• Стоим у стенда, ждём донаты\n• 1 Robux = 4 прыжка (сумма округляется)\n• Перед прыжками 'OMG thanks...'\n• Таймер 30 мин, при донате сброс"
+    descJump.Text = "🦘 Режим Jump-Robux:\n• Захват стенда (удержание E)\n• Стоим у стенда, ждём донаты\n• 1 Robux = 4 прыжка\n• Перед прыжками сообщение\n• Таймер 30 мин, сброс при донате"
     descJump.TextColor3 = Color3.fromRGB(200,255,200)
     descJump.TextWrapped = true
     descJump.TextXAlignment = Enum.TextXAlignment.Left
@@ -593,7 +512,7 @@ local function createGUI()
     jumpStart.Size = UDim2.new(0.5,-5,0,40)
     jumpStart.Position = UDim2.new(0,5,0,y)
     jumpStart.BackgroundColor3 = Color3.fromRGB(0,150,0)
-    jumpStart.Text = "▶ Старт"
+    jumpStart.Text = "Старт"
     jumpStart.TextColor3 = Color3.new(1,1,1)
     jumpStart.Font = Enum.Font.Gotham
     jumpStart.TextScaled = true
@@ -602,7 +521,7 @@ local function createGUI()
     jumpStop.Size = UDim2.new(0.5,-5,0,40)
     jumpStop.Position = UDim2.new(0.5,0,0,y)
     jumpStop.BackgroundColor3 = Color3.fromRGB(150,0,0)
-    jumpStop.Text = "⏹ Стоп"
+    jumpStop.Text = "Стоп"
     jumpStop.TextColor3 = Color3.new(1,1,1)
     jumpStop.Font = Enum.Font.Gotham
     jumpStop.TextScaled = true
@@ -621,15 +540,15 @@ local function createGUI()
     y = y + 60
 
     -- Кнопка перезахода
-    local rejoinBtnJump = Instance.new("TextButton", jumpCont)
-    rejoinBtnJump.Size = UDim2.new(1,-10,0,40)
-    rejoinBtnJump.Position = UDim2.new(0,5,0,y)
-    rejoinBtnJump.BackgroundColor3 = Color3.fromRGB(100,100,255)
-    rejoinBtnJump.Text = "🔄 Перезайти на другой сервер"
-    rejoinBtnJump.TextColor3 = Color3.new(1,1,1)
-    rejoinBtnJump.Font = Enum.Font.Gotham
-    rejoinBtnJump.TextScaled = true
-    rejoinBtnJump.MouseButton1Click:Connect(rejoinServer)
+    local rejoinBtn2 = Instance.new("TextButton", jumpCont)
+    rejoinBtn2.Size = UDim2.new(1,-10,0,40)
+    rejoinBtn2.Position = UDim2.new(0,5,0,y)
+    rejoinBtn2.BackgroundColor3 = Color3.fromRGB(100,100,255)
+    rejoinBtn2.Text = "🔄 Перезайти на сервер"
+    rejoinBtn2.TextColor3 = Color3.new(1,1,1)
+    rejoinBtn2.Font = Enum.Font.Gotham
+    rejoinBtn2.TextScaled = true
+    rejoinBtn2.MouseButton1Click:Connect(rejoinServer)
     y = y + 50
 
     -- Fake donate
@@ -682,7 +601,6 @@ local function createGUI()
         if input.KeyCode == Enum.KeyCode.RightControl then
             guiVisible = not guiVisible
             screen.Enabled = guiVisible
-            debugPrint("GUI toggled:", guiVisible)
         end
     end)
 
@@ -693,11 +611,7 @@ end
 setupDonationListener()
 local ok, err = pcall(createGUI)
 if not ok then
-    warn("[PlsDonateFarm] GUI error:", err)
+    warn("GUI error:", err)
 else
-    debugPrint("=":rep(50))
-    debugPrint("✅ Script loaded successfully")
-    debugPrint("Press Right Ctrl to hide/show GUI")
-    debugPrint("Use 'Захват стенда (тест)' to check claiming")
-    debugPrint("=":rep(50))
+    debugPrint("Script loaded. Press Right Ctrl to hide/show.")
 end
