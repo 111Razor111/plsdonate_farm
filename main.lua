@@ -1,11 +1,10 @@
 --[[
-    Pls Donate Farm Script
-    Версия: 4.0 (Стабильная)
-    Инжектор: Xeno
+    Pls Donate Farm Script v5.0 (Исправленный)
+    Автор: AI Agent
     Горячая клавиша: Правый Ctrl
 ]]
 
--- Конфигурация (ТВОИ ДАННЫЕ)
+-- Конфигурация
 local config = {
     telegramToken = "8104787078:AAHiRuOS4gaTxaVRlYU7BV9L8flN_VXGV68",
     telegramChatID = "1981885077",
@@ -26,6 +25,7 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TextChatService = game:GetService("TextChatService")
 local VirtualUser = game:GetService("VirtualUser")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Переменные
@@ -36,7 +36,7 @@ local serverTime = 0
 local gui = nil
 local guiVisible = true
 
--- Отладка (F9)
+-- Отладка
 local function debugPrint(...) print("[PlsDonateFarm]", ...) end
 local function debugWarn(...) warn("[PlsDonateFarm]", ...) end
 
@@ -57,6 +57,7 @@ local function sendTelegram(message)
     local url = string.format("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
         config.telegramToken, config.telegramChatID, HttpService:UrlEncode(message))
     pcall(function() HttpService:GetAsync(url) end)
+    debugPrint("Telegram sent: " .. message)
 end
 
 -- Анти-AFK
@@ -89,19 +90,41 @@ local function findStand()
     return nil
 end
 
--- Занять стенд
+-- Занятие стенда с зажатием E
 local function claimStand()
     local stand = findStand()
-    if stand then
-        StandPosition = stand:GetPivot().Position
-        debugPrint("Stand claimed at", StandPosition)
-        return true
+    if not stand then
+        debugWarn("No stand found")
+        return false
     end
-    debugWarn("No stand found")
-    return false
+
+    -- Подходим к стенду
+    local root = getRootPart()
+    if root then
+        root.CFrame = stand:GetPivot().Position * CFrame.new(0,0,2)
+    end
+    wait(1)
+
+    -- Имитируем зажатие клавиши E на 2 секунды
+    debugPrint("Holding E to claim stand...")
+    local start = tick()
+    while tick() - start < 2 do
+        pcall(function()
+            -- Эмулируем нажатие E (KeyCode.E)
+            VirtualUser:KeyDown(Enum.KeyCode.E)
+            RunService.Heartbeat:Wait()
+        end)
+        wait(0.1)
+    end
+    pcall(function() VirtualUser:KeyUp(Enum.KeyCode.E) end)
+
+    -- Сохраняем позицию стенда
+    StandPosition = stand:GetPivot().Position
+    debugPrint("Stand claimed at", StandPosition)
+    return true
 end
 
--- Обновить текст на стенде
+-- Обновление текста на стенде
 local function updateStandText(mode)
     local stand = findStand()
     if not stand then return end
@@ -119,7 +142,7 @@ local function teleportToPlayer(player)
     local targetRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     local myRoot = getRootPart()
     if not targetRoot or not myRoot then return false end
-    myRoot.CFrame = targetRoot.CFrame * CFrame.new(0,0,-3) -- спереди
+    myRoot.CFrame = targetRoot.CFrame * CFrame.new(0,0,-3)
     return true
 end
 
@@ -144,7 +167,7 @@ local function sendChat(msg)
     end)
 end
 
--- Прыжки
+-- Прыжки (без сообщений в чат)
 local function performJumps(count)
     local humanoid = getHumanoid()
     if not humanoid then return end
@@ -159,16 +182,22 @@ end
 -- Обработка доната
 local function handleDonation(amount, donor)
     local after = amount * 0.7
-    sendChat(config.thankYouMessage)
+    -- Отправляем Telegram (даже для теста)
     sendTelegram(string.format("%s получил %d Robux (чистыми %d). От: %s", LocalPlayer.Name, amount, after, donor))
+
     if currentMode == "Jump" then
         serverTime = 0
-        performJumps(amount * 4)
+        -- Сообщение перед прыжками
+        sendChat("OMG thanks you for donat")
+        wait(1)
+        performJumps(amount * 4)  -- 1 робукс = 4 прыжка
         sendChat(config.jumpThanksMessage)
+    elseif currentMode == "Beg" then
+        sendChat(config.thankYouMessage)
     end
 end
 
--- Слушатель донатов (leaderstats + чат)
+-- Слушатель донатов
 local function setupDonationListener()
     local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
     if leaderstats then
@@ -203,19 +232,20 @@ local function rejoinServer()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end
 
--- === РЕЖИМЫ ===
+-- === РЕЖИМ 1: Попрошайничество ===
 local function startBegMode()
     debugPrint("Starting Beg Mode")
     currentMode = "Beg"
     isRunning = true
+
+    -- Занимаем стенд
     if not claimStand() then
-        wait(5)
-        if not claimStand() then
-            rejoinServer()
-            return
-        end
+        debugWarn("Failed to claim stand")
+        rejoinServer()
+        return
     end
     updateStandText("Beg")
+
     while isRunning do
         local players = {}
         for _, p in ipairs(Players:GetPlayers()) do
@@ -223,39 +253,43 @@ local function startBegMode()
                 table.insert(players, p)
             end
         end
+
         if #players == 0 then
             rejoinServer()
             break
         end
+
         for _, p in ipairs(players) do
             if not isRunning then break end
             if teleportToPlayer(p) then
                 wait(1)
                 sendChat(config.begMessage)
-                wait(config.delayBetweenPlayers)
+                -- Ждём 10 секунд (пока сообщение висит)
+                wait(10)
                 teleportToStand()
                 wait(1)
             end
             antiAfk()
         end
+
         rejoinServer()
         break
     end
 end
 
+-- === РЕЖИМ 2: Jump-Robux ===
 local function startJumpMode()
     debugPrint("Starting Jump Mode")
     currentMode = "Jump"
     isRunning = true
     serverTime = 0
+
     if not claimStand() then
-        wait(5)
-        if not claimStand() then
-            rejoinServer()
-            return
-        end
+        rejoinServer()
+        return
     end
     updateStandText("Jump")
+
     while isRunning do
         wait(1)
         serverTime = serverTime + 1
@@ -267,18 +301,19 @@ local function startJumpMode()
     end
 end
 
+-- Остановка режима
 local function stopMode()
     isRunning = false
     currentMode = nil
 end
 
--- Тест
+-- Тестовая функция Fake Donate (5 робуксов)
 local function fakeDonate()
     debugPrint("Fake donate 5 Robux")
     handleDonation(5, "TEST")
 end
 
--- Закрытие скрипта
+-- Полное завершение скрипта
 local function shutdown()
     stopMode()
     if gui then gui:Destroy() end
@@ -317,7 +352,7 @@ local function createGUI()
     title.Size = UDim2.new(1,-40,0,40)
     title.Position = UDim2.new(0,10,0,0)
     title.BackgroundTransparency = 1
-    title.Text = "Pls Donate Farm"
+    title.Text = "Pls Donate Farm v5.0"
     title.TextColor3 = Color3.new(1,1,1)
     title.TextScaled = true
     title.Font = Enum.Font.GothamBold
@@ -370,7 +405,7 @@ local function createGUI()
     descBeg.Position = UDim2.new(0,5,0,y)
     descBeg.BackgroundTransparency = 0.5
     descBeg.BackgroundColor3 = Color3.fromRGB(30,30,40)
-    descBeg.Text = "📢 Режим попрошайничества:\n• Обход всех игроков (подход спереди)\n• Возврат к стенду после каждого\n• Перезаход после обхода"
+    descBeg.Text = "📢 Режим попрошайничества:\n• Захват стенда с зажатием E\n• Обход всех игроков (подход спереди)\n• После сообщения ожидание 10 сек\n• Возврат к стенду, перезаход после цикла"
     descBeg.TextColor3 = Color3.fromRGB(200,200,255)
     descBeg.TextWrapped = true
     descBeg.TextXAlignment = Enum.TextXAlignment.Left
@@ -409,7 +444,7 @@ local function createGUI()
     begStatus.TextScaled = true
     y = y + 60
 
-    -- Telegram info (только текст)
+    -- Telegram info
     local tLabel1 = Instance.new("TextLabel", begCont)
     tLabel1.Size = UDim2.new(1,-10,0,30)
     tLabel1.Position = UDim2.new(0,5,0,y)
@@ -463,7 +498,7 @@ local function createGUI()
     descJump.Position = UDim2.new(0,5,0,y)
     descJump.BackgroundTransparency = 0.5
     descJump.BackgroundColor3 = Color3.fromRGB(30,30,40)
-    descJump.Text = "🦘 Режим Jump-Robux:\n• Стоим у стенда, ждём донаты\n• 1 Robux = 4 прыжка\n• Таймер 30 мин, при донате сброс"
+    descJump.Text = "🦘 Режим Jump-Robux:\n• Захват стенда с зажатием E\n• Стоим у стенда, ждём донаты\n• 1 Robux = 4 прыжка\n• Перед прыжками сообщение в чат\n• Таймер 30 мин, при донате сброс"
     descJump.TextColor3 = Color3.fromRGB(200,255,200)
     descJump.TextWrapped = true
     descJump.TextXAlignment = Enum.TextXAlignment.Left
